@@ -1,17 +1,49 @@
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 10, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    triggers {
+        githubPush()
+    }
+
     environment {
-        SSH_CRED = 'node-pipeline-key'               // Jenkins credential ID
-        SERVER_IP = '172.31.22.227'          // Your Deploy EC2 IP
+        SSH_CRED    = 'node-pipeline-key'      // Jenkins credential ID
+        SERVER_IP   = '172.31.22.227'          // Deploy EC2 private IP
         REMOTE_USER = 'ubuntu'
-        WEB_DIR = '/var/www/html/portfolio'
+        WEB_DIR     = '/var/www/html/portfolio'
+        BACKUP_DIR  = '/var/backups/portfolio'
+        REPO_URL    = 'https://github.com/jiteshpardeshi/portfolio.git'
+        BRANCH      = 'master'                   // change to 'master' if repo uses master
     }
 
     stages {
+
         stage('Clone Repo') {
             steps {
-                git url: 'https://github.com/jiteshpardeshi/portfolio.git', branch: 'master'
+                git url: "${REPO_URL}", branch: "${BRANCH}"
+            }
+        }
+
+        stage('Validate') {
+            steps {
+                sh '''
+                    set -e
+                    test -f index.html
+                    test -f css/style.css
+                    test -f js/main.js
+                    if command -v node >/dev/null 2>&1; then
+                        node --check js/main.js
+                    fi
+                    if grep -q "your-github-username" js/main.js; then
+                        echo "WARN: GitHub username placeholder still in js/main.js"
+                    fi
+                '''
             }
         }
 
@@ -19,17 +51,71 @@ pipeline {
             steps {
                 sshagent(credentials: ["${SSH_CRED}"]) {
                     sh '''
-                        echo "Cleaning old files on server..."
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "sudo rm -rf ${WEB_DIR}/*"
+                        set -e
+                        OPTS="-o StrictHostKeyChecking=accept-new"
+                        TARGET="${REMOTE_USER}@${SERVER_IP}"
+                        REL=/tmp/portfolio_${BUILD_NUMBER}
 
-                        echo "Uploading new files to /tmp on server..."
-                        scp -r index.html css js fonts images ${REMOTE_USER}@${SERVER_IP}:/tmp/
+                        echo "Uploading to staging dir..."
+                        ssh $OPTS $TARGET "rm -rf $REL && mkdir -p $REL"
+                        scp $OPTS -r index.html css js $TARGET:$REL/
 
-                        echo "Deploying files to Apache directory..."
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "sudo cp -r /tmp/index.html /tmp/css /tmp/js /tmp/images ${WEB_DIR}/"
+                        echo "Backup, swap, fix perms..."
+                        ssh $OPTS $TARGET "
+                            set -e
+                            sudo mkdir -p ${WEB_DIR} ${BACKUP_DIR}
+                            sudo tar -czf ${BACKUP_DIR}/portfolio-${BUILD_NUMBER}.tar.gz -C ${WEB_DIR} .
+                            sudo rm -rf ${WEB_DIR}/*
+                            sudo cp -r $REL/index.html $REL/css $REL/js ${WEB_DIR}/
+                            sudo chown -R www-data:www-data ${WEB_DIR}
+                            sudo find ${WEB_DIR} -type d -exec chmod 755 {} +
+                            sudo find ${WEB_DIR} -type f -exec chmod 644 {} +
+                            rm -rf $REL
+                            ls -1t ${BACKUP_DIR}/*.tar.gz | tail -n +6 | xargs -r sudo rm -f
+                        "
                     '''
                 }
             }
+        }
+
+        stage('Verify') {
+            steps {
+                sh '''
+                    set -e
+                    sleep 2
+                    URL="http://${SERVER_IP}/portfolio"
+                    curl -fsS "$URL/" | grep -q "Jitesh"
+                    curl -fsS -o /dev/null "$URL/css/style.css"
+                    curl -fsS -o /dev/null "$URL/js/main.js"
+                    echo "Site live: $URL/"
+                '''
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Deploy failed. Attempting rollback...'
+            sshagent(credentials: ["${SSH_CRED}"]) {
+                sh '''
+                    ssh -o StrictHostKeyChecking=accept-new ${REMOTE_USER}@${SERVER_IP} "
+                        F=${BACKUP_DIR}/portfolio-${BUILD_NUMBER}.tar.gz
+                        if [ -f \\$F ]; then
+                            sudo rm -rf ${WEB_DIR}/*
+                            sudo tar -xzf \\$F -C ${WEB_DIR}
+                            echo 'Rolled back to previous version'
+                        else
+                            echo 'No backup for this build. Nothing to roll back.'
+                        fi
+                    " || true
+                '''
+            }
+        }
+        success {
+            echo "Deployed build #${BUILD_NUMBER}"
+        }
+        cleanup {
+            cleanWs()
         }
     }
 }
