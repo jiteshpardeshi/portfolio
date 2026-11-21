@@ -15,8 +15,8 @@ pipeline {
         SSH_CRED    = 'node-pipeline-key'      // Jenkins credential ID
         SERVER_IP   = '172.31.22.227'          // Deploy EC2 private IP
         REMOTE_USER = 'ubuntu'
-        WEB_DIR     = '/var/www/html/portfolio'
-        BACKUP_DIR  = '/var/backups/portfolio'
+        WEB_DIR     = '/var/www/html/'
+        BACKUP_DIR  = '/var/backups/'
         REPO_URL    = 'https://github.com/jiteshpardeshi/portfolio.git'
         BRANCH      = 'master'
     }
