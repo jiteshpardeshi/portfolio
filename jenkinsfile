@@ -18,7 +18,7 @@ pipeline {
         WEB_DIR     = '/var/www/html/portfolio'
         BACKUP_DIR  = '/var/backups/portfolio'
         REPO_URL    = 'https://github.com/jiteshpardeshi/portfolio.git'
-        BRANCH      = 'master'                   // change to 'master' if repo uses master
+        BRANCH      = 'master'
     }
 
     stages {
@@ -114,7 +114,7 @@ pipeline {
             echo "Deployed build #${BUILD_NUMBER}"
         }
         cleanup {
-            cleanWs()
+            deleteDir()
         }
     }
 }
