@@ -83,7 +83,7 @@ pipeline {
                 sh '''
                     set -e
                     sleep 2
-                    URL="http://${SERVER_IP}/portfolio"
+                    URL="http://${SERVER_IP}"
                     curl -fsS "$URL/" | grep -q "Jitesh"
                     curl -fsS -o /dev/null "$URL/css/style.css"
                     curl -fsS -o /dev/null "$URL/js/main.js"
