@@ -15,7 +15,7 @@ pipeline {
         SSH_CRED    = 'node-pipeline-key'      // Jenkins credential ID
         SERVER_IP   = '172.31.22.227'          // Deploy EC2 private IP
         REMOTE_USER = 'ubuntu'
-        WEB_DIR     = '/var/www/html/'
+        WEB_DIR     = '/var/www/html/portfolio'
         BACKUP_DIR  = '/var/backups/portfolio'
         REPO_URL    = 'https://github.com/jiteshpardeshi/portfolio.git'
         BRANCH      = 'master'
@@ -36,6 +36,7 @@ pipeline {
                     test -f index.html
                     test -f css/style.css
                     test -f js/main.js
+                    test -f resume.pdf
                     if command -v node >/dev/null 2>&1; then
                         node --check js/main.js
                     fi
@@ -57,7 +58,7 @@ pipeline {
 
                         echo "Uploading to staging dir..."
                         ssh $OPTS $TARGET "rm -rf $REL && mkdir -p $REL"
-                        scp $OPTS -r index.html css js $TARGET:$REL/
+                        scp $OPTS -r index.html resume.pdf css js $TARGET:$REL/
 
                         echo "Backup, swap, fix perms..."
                         ssh $OPTS $TARGET "
@@ -65,7 +66,7 @@ pipeline {
                             sudo mkdir -p ${WEB_DIR} ${BACKUP_DIR}
                             sudo tar -czf ${BACKUP_DIR}/portfolio-${BUILD_NUMBER}.tar.gz -C ${WEB_DIR} .
                             sudo rm -rf ${WEB_DIR}/*
-                            sudo cp -r $REL/index.html $REL/css $REL/js ${WEB_DIR}/
+                            sudo cp -r $REL/index.html $REL/resume.pdf $REL/css $REL/js ${WEB_DIR}/
                             sudo chown -R www-data:www-data ${WEB_DIR}
                             sudo find ${WEB_DIR} -type d -exec chmod 755 {} +
                             sudo find ${WEB_DIR} -type f -exec chmod 644 {} +
@@ -82,7 +83,7 @@ pipeline {
                 sh '''
                     set -e
                     sleep 2
-                    URL="http://${SERVER_IP}"
+                    URL="http://${SERVER_IP}/portfolio"
                     curl -fsS "$URL/" | grep -q "Jitesh"
                     curl -fsS -o /dev/null "$URL/css/style.css"
                     curl -fsS -o /dev/null "$URL/js/main.js"
